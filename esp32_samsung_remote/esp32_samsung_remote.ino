@@ -14,6 +14,7 @@ const char *REMOTE_DESCRIPTION = "Samsung TV Web Remote";
 const char *REMOTE_ID = "webremote";
 
 WebServer server(80);
+String pendingBrowserUrl = "";
 
 using Bytes = std::vector<uint8_t>;
 
@@ -224,10 +225,10 @@ const char INDEX_HTML[] PROGMEM = R"HTML(
       <button class="tile" data-key="KEY_SOURCE">Source</button>
     </section>
     <section class="top shortcuts">
-      <button class="tile" data-key="KEY_YT_BROWSER">YouTube</button>
-      <button class="tile" data-key="KEY_NETFLIX">Netflix</button>
-      <button class="tile" data-key="KEY_WWW">Browser</button>
-      <button class="tile" data-key="KEY_SEARCH">Search</button>
+      <button class="tile" data-web="youtube">YouTube</button>
+      <button class="tile" data-web="netflix">Netflix</button>
+      <button class="tile" data-web="google">Google</button>
+      <button class="tile" data-web="browser">Browser</button>
     </section>
     <section class="pad">
       <button class="round up" data-key="KEY_UP">⌃</button>
@@ -255,6 +256,14 @@ const char INDEX_HTML[] PROGMEM = R"HTML(
       KEY_DOWN: "Down", KEY_LEFT: "Left", KEY_RIGHT: "Right", KEY_ENTER: "OK",
       KEY_YT_BROWSER: "YouTube", KEY_YOUTUBE: "YouTube App", KEY_NETFLIX: "Netflix", KEY_WWW: "Browser",
       KEY_SEARCH: "Search", KEY_GOOGLE: "Google"
+    };
+    const webLabels = {
+      youtube: "YouTube",
+      netflix: "Netflix",
+      google: "Google",
+      prime: "Prime Video",
+      disney: "Disney+",
+      browser: "Browser"
     };
     function setStatus(state) {
       statusBox.className = "status " + state;
@@ -293,12 +302,100 @@ const char INDEX_HTML[] PROGMEM = R"HTML(
         setTimeout(() => button.classList.remove("pressing"), 150);
       }
     }
+    async function openWeb(site, button) {
+      button.classList.add("pressing");
+      try {
+        const res = await fetch("/open/" + encodeURIComponent(site), { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Open failed");
+        setStatus("online");
+        notify((webLabels[site] || site) + " queued on TV browser");
+      } catch (error) {
+        setStatus("offline");
+        notify(error.message || "TV offline");
+      } finally {
+        setTimeout(() => button.classList.remove("pressing"), 150);
+      }
+    }
     document.querySelectorAll("[data-key]").forEach(button => {
       button.addEventListener("click", () => sendKey(button.dataset.key, button));
+    });
+    document.querySelectorAll("[data-web]").forEach(button => {
+      button.addEventListener("click", () => openWeb(button.dataset.web, button));
     });
     checkStatus();
     setInterval(checkStatus, 15000);
   </script>
+</body>
+</html>
+)HTML";
+
+const char START_HTML[] PROGMEM = R"HTML(
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TV Web Launcher</title>
+  <style>
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      font-family: system-ui, sans-serif;
+      color: #f5f7fb;
+      background: #090d12;
+    }
+    main {
+      width: min(900px, calc(100vw - 48px));
+      display: grid;
+      gap: 20px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 44px;
+    }
+    p {
+      margin: 0;
+      color: #a3adba;
+      font-size: 22px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+      margin-top: 20px;
+    }
+    a {
+      display: grid;
+      place-items: center;
+      min-height: 120px;
+      border: 1px solid rgba(255,255,255,.16);
+      border-radius: 18px;
+      color: #f5f7fb;
+      background: rgba(35,47,61,.86);
+      text-decoration: none;
+      font-size: 28px;
+      font-weight: 800;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div>
+      <h1>TV Web Launcher</h1>
+      <p>Choose a site, or use the ESP32 remote to launch one automatically.</p>
+    </div>
+    <section class="grid">
+      <a href="https://www.youtube.com/tv">YouTube</a>
+      <a href="https://www.netflix.com">Netflix</a>
+      <a href="https://www.google.com">Google</a>
+      <a href="https://www.primevideo.com">Prime Video</a>
+      <a href="https://www.disneyplus.com">Disney+</a>
+      <a href="/">Remote</a>
+    </section>
+  </main>
 </body>
 </html>
 )HTML";
@@ -549,9 +646,69 @@ void handleRoot() {
   server.send_P(200, "text/html", INDEX_HTML);
 }
 
+String webUrlForSite(const String &site) {
+  if (site == "youtube") {
+    return "https://www.youtube.com/tv";
+  }
+  if (site == "netflix") {
+    return "https://www.netflix.com";
+  }
+  if (site == "google") {
+    return "https://www.google.com";
+  }
+  if (site == "prime") {
+    return "https://www.primevideo.com";
+  }
+  if (site == "disney") {
+    return "https://www.disneyplus.com";
+  }
+  if (site == "browser") {
+    return "";
+  }
+  return "";
+}
+
+void handleStart() {
+  if (pendingBrowserUrl.length() > 0) {
+    String url = pendingBrowserUrl;
+    pendingBrowserUrl = "";
+    server.sendHeader("Location", url, true);
+    server.send(302, "text/plain", "Opening " + url);
+    return;
+  }
+
+  server.send_P(200, "text/html", START_HTML);
+}
+
 void handleYoutubeRedirect() {
   server.sendHeader("Location", "https://www.youtube.com/tv", true);
   server.send(302, "text/plain", "Opening YouTube...");
+}
+
+void handleOpenSite() {
+  String path = server.uri();
+  String site = path.substring(String("/open/").length());
+  site.toLowerCase();
+
+  String url = webUrlForSite(site);
+  if (url.length() == 0 && site != "browser") {
+    sendJson(400, "{\"ok\":false,\"error\":\"Unsupported website\"}");
+    return;
+  }
+
+  pendingBrowserUrl = url;
+
+  String error;
+  if (!sendSamsungKey("KEY_WWW", error)) {
+    sendJson(503, String("{\"ok\":false,\"site\":\"") + site + "\",\"error\":\"" + error + "\"}");
+    return;
+  }
+
+  sendJson(
+    200,
+    String("{\"ok\":true,\"site\":\"") + site +
+      "\",\"key\":\"KEY_WWW\",\"start\":\"/start\",\"url\":\"" + url + "\"}"
+  );
 }
 
 void handleStatus() {
@@ -578,13 +735,15 @@ void handleKey() {
   }
 
   if (key == "KEY_YT_BROWSER") {
+    pendingBrowserUrl = "https://www.youtube.com/tv";
+
     String error;
     if (!sendSamsungKey("KEY_WWW", error)) {
       sendJson(503, String("{\"ok\":false,\"key\":\"KEY_YT_BROWSER\",\"error\":\"") + error + "\"}");
       return;
     }
 
-    sendJson(200, "{\"ok\":true,\"key\":\"KEY_YT_BROWSER\",\"mode\":\"browser\",\"redirect\":\"/yt\"}");
+    sendJson(200, "{\"ok\":true,\"key\":\"KEY_YT_BROWSER\",\"mode\":\"browser\",\"start\":\"/start\",\"url\":\"https://www.youtube.com/tv\"}");
     return;
   }
 
@@ -600,6 +759,10 @@ void handleKey() {
 void handleNotFound() {
   if (server.uri().startsWith("/key/")) {
     handleKey();
+    return;
+  }
+  if (server.uri().startsWith("/open/")) {
+    handleOpenSite();
     return;
   }
   sendJson(404, "{\"ok\":false,\"error\":\"Not found\"}");
@@ -625,6 +788,7 @@ void setup() {
   connectWifi();
 
   server.on("/", HTTP_GET, handleRoot);
+  server.on("/start", HTTP_GET, handleStart);
   server.on("/yt", HTTP_GET, handleYoutubeRedirect);
   server.on("/status", HTTP_GET, handleStatus);
   server.onNotFound(handleNotFound);

@@ -45,6 +45,10 @@ GET /key/KEY_NETFLIX
 GET /key/KEY_WWW
 GET /key/KEY_SEARCH
 GET /yt
+GET /start
+GET /open/youtube
+GET /open/netflix
+GET /open/google
 ```
 
 The first connection may show a permission prompt on the Samsung TV. Allow the remote named `Web Remote`.
@@ -73,18 +77,29 @@ Browser -> KEY_WWW
 Search  -> KEY_SEARCH
 ```
 
-The YouTube button opens the TV browser with `KEY_WWW`. The ESP32 also serves:
+The website buttons use this flow:
+
+1. ESP32 saves the selected URL.
+2. ESP32 sends `KEY_WWW` to open the TV browser.
+3. The TV browser opens its homepage.
+4. If that homepage is `http://<ESP32-IP>/start`, ESP32 redirects the TV to the selected site.
+
+Set the TV browser homepage once to:
 
 ```text
-http://<ESP32-IP>/yt
+http://<ESP32-IP>/start
 ```
 
-That route redirects to:
+Then the website buttons can open:
 
 ```text
-https://www.youtube.com/tv
+YouTube -> https://www.youtube.com/tv
+Netflix -> https://www.netflix.com
+Google  -> https://www.google.com
+Prime   -> https://www.primevideo.com
+Disney+ -> https://www.disneyplus.com
 ```
 
-Samsung legacy remote protocol cannot reliably type a URL into the browser address bar. For one-button YouTube through the browser, set the TV browser homepage or a browser bookmark to `http://<ESP32-IP>/yt` once. After that, the YouTube button opens the browser and the browser can land on YouTube.
+Samsung legacy remote protocol cannot reliably type a URL into the browser address bar. The `/start` homepage redirect is the workaround.
 
 App keys such as `KEY_YOUTUBE` and `KEY_NETFLIX` are model-dependent. Some Samsung legacy TVs ignore them even when normal remote keys work.
