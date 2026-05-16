@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Samsung TV Remote</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="remote" aria-label="Samsung Smart TV remote control">
+        <header class="remote__header">
+          <div>
+            <p class="eyebrow">Samsung Smart TV</p>
+            <h1>Web Remote</h1>
+          </div>
+          <div class="status" id="statusPill" aria-live="polite">
+            <span class="status__dot"></span>
+            <span id="statusText">Checking</span>
+          </div>
+        </header>
+
+        <div class="screen">
+          <div>
+            <span class="screen__label">Legacy mode</span>
+            <strong>{{ tv_host }}:55000</strong>
+          </div>
+          <button class="ghost-button" id="reconnectButton" type="button">Reconnect</button>
+        </div>
+
+        <section class="controls controls--top" aria-label="System controls">
+          <button class="remote-button remote-button--danger" data-key="KEY_POWER" type="button">
+            <span class="icon">⏻</span>
+            <span>Power</span>
+          </button>
+          <button class="remote-button" data-key="KEY_HOME" type="button">
+            <span class="icon">⌂</span>
+            <span>Home</span>
+          </button>
+          <button class="remote-button" data-key="KEY_MENU" type="button">
+            <span class="icon">☰</span>
+            <span>Menu</span>
+          </button>
+          <button class="remote-button" data-key="KEY_SOURCE" type="button">
+            <span class="icon">↗</span>
+            <span>Source</span>
+          </button>
+        </section>
+
+        <section class="pad" aria-label="Directional controls">
+          <button class="round-button pad__up" data-key="KEY_UP" type="button" aria-label="Up">⌃</button>
+          <button class="round-button pad__left" data-key="KEY_LEFT" type="button" aria-label="Left">‹</button>
+          <button class="ok-button" data-key="KEY_ENTER" type="button">OK</button>
+          <button class="round-button pad__right" data-key="KEY_RIGHT" type="button" aria-label="Right">›</button>
+          <button class="round-button pad__down" data-key="KEY_DOWN" type="button" aria-label="Down">⌄</button>
+        </section>
+
+        <section class="rockers" aria-label="Volume and channel controls">
+          <div class="rocker">
+            <button class="rocker__button" data-key="KEY_VOLUP" type="button" aria-label="Volume up">+</button>
+            <span>Volume</span>
+            <button class="rocker__button" data-key="KEY_VOLDOWN" type="button" aria-label="Volume down">−</button>
+          </div>
+          <button class="mute-button" data-key="KEY_MUTE" type="button">
+            <span class="icon">♪</span>
+            <span>Mute</span>
+          </button>
+          <div class="rocker">
+            <button class="rocker__button" data-key="KEY_CHUP" type="button" aria-label="Channel up">+</button>
+            <span>Channel</span>
+            <button class="rocker__button" data-key="KEY_CHDOWN" type="button" aria-label="Channel down">−</button>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <div class="toast-stack" id="toastStack" aria-live="polite" aria-atomic="true"></div>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+  </body>
+</html>
