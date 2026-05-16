@@ -19,7 +19,9 @@ using Bytes = std::vector<uint8_t>;
 
 const char *ALLOWED_KEYS[] = {
   "KEY_POWER",
+  "KEY_POWEROFF",
   "KEY_HOME",
+  "KEY_CONTENTS",
   "KEY_MENU",
   "KEY_MUTE",
   "KEY_VOLUP",
@@ -32,6 +34,12 @@ const char *ALLOWED_KEYS[] = {
   "KEY_LEFT",
   "KEY_RIGHT",
   "KEY_ENTER",
+  "KEY_YT_BROWSER",
+  "KEY_YOUTUBE",
+  "KEY_NETFLIX",
+  "KEY_WWW",
+  "KEY_SEARCH",
+  "KEY_GOOGLE",
 };
 
 const char INDEX_HTML[] PROGMEM = R"HTML(
@@ -139,6 +147,7 @@ const char INDEX_HTML[] PROGMEM = R"HTML(
     button:hover { transform: translateY(-2px); border-color: rgba(100,181,255,.55); background: rgba(47,61,78,.9); }
     button:active, .pressing { transform: scale(.95); }
     .top { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .shortcuts { margin-top: 12px; }
     .tile { min-height: 76px; border-radius: 18px; display: grid; place-items: center; gap: 4px; padding: 10px; }
     .power { background: rgba(99,32,42,.86); }
     .pad {
@@ -209,10 +218,16 @@ const char INDEX_HTML[] PROGMEM = R"HTML(
       <button class="tile" onclick="checkStatus(true)">Reconnect</button>
     </section>
     <section class="top">
-      <button class="tile power" data-key="KEY_POWER">Power</button>
-      <button class="tile" data-key="KEY_HOME">Home</button>
+      <button class="tile power" data-key="KEY_POWEROFF">Power</button>
+      <button class="tile" data-key="KEY_CONTENTS">Home</button>
       <button class="tile" data-key="KEY_MENU">Menu</button>
       <button class="tile" data-key="KEY_SOURCE">Source</button>
+    </section>
+    <section class="top shortcuts">
+      <button class="tile" data-key="KEY_YT_BROWSER">YouTube</button>
+      <button class="tile" data-key="KEY_NETFLIX">Netflix</button>
+      <button class="tile" data-key="KEY_WWW">Browser</button>
+      <button class="tile" data-key="KEY_SEARCH">Search</button>
     </section>
     <section class="pad">
       <button class="round up" data-key="KEY_UP">⌃</button>
@@ -233,10 +248,13 @@ const char INDEX_HTML[] PROGMEM = R"HTML(
     const statusText = document.getElementById("statusText");
     const toast = document.getElementById("toast");
     const labels = {
-      KEY_POWER: "Power", KEY_HOME: "Home", KEY_MENU: "Menu", KEY_MUTE: "Mute",
+      KEY_POWER: "Power", KEY_POWEROFF: "Power", KEY_HOME: "Home", KEY_CONTENTS: "Home",
+      KEY_MENU: "Menu", KEY_MUTE: "Mute",
       KEY_VOLUP: "Volume Up", KEY_VOLDOWN: "Volume Down", KEY_CHUP: "Channel Up",
       KEY_CHDOWN: "Channel Down", KEY_SOURCE: "Source", KEY_UP: "Up",
-      KEY_DOWN: "Down", KEY_LEFT: "Left", KEY_RIGHT: "Right", KEY_ENTER: "OK"
+      KEY_DOWN: "Down", KEY_LEFT: "Left", KEY_RIGHT: "Right", KEY_ENTER: "OK",
+      KEY_YT_BROWSER: "YouTube", KEY_YOUTUBE: "YouTube App", KEY_NETFLIX: "Netflix", KEY_WWW: "Browser",
+      KEY_SEARCH: "Search", KEY_GOOGLE: "Google"
     };
     function setStatus(state) {
       statusBox.className = "status " + state;
@@ -314,7 +332,12 @@ String base64Encode(const String &input) {
     return "";
   }
 
-  return String(reinterpret_cast<char *>(output)).substring(0, outputLength);
+  String encoded;
+  encoded.reserve(outputLength);
+  for (size_t i = 0; i < outputLength; i++) {
+    encoded += static_cast<char>(output[i]);
+  }
+  return encoded;
 }
 
 Bytes serializeString(const String &value) {
@@ -473,19 +496,26 @@ bool sendSamsungKey(const String &key, String &error) {
   WiFiClient client;
   client.setTimeout(5000);
 
+  Serial.print("Sending key: ");
+  Serial.println(key);
+
   if (!client.connect(TV_HOST, TV_PORT)) {
     error = "Could not connect to TV";
+    Serial.println(error);
     return false;
   }
 
   Bytes handshake = makeHandshakePacket();
   if (!writePacket(client, handshake)) {
     error = "Could not send handshake";
+    Serial.println(error);
     client.stop();
     return false;
   }
 
   if (!readSamsungResponse(client, true, error)) {
+    Serial.print("Handshake failed: ");
+    Serial.println(error);
     client.stop();
     return false;
   }
@@ -493,11 +523,18 @@ bool sendSamsungKey(const String &key, String &error) {
   Bytes command = makeControlPacket(key);
   if (!writePacket(client, command)) {
     error = "Could not send command";
+    Serial.println(error);
     client.stop();
     return false;
   }
 
   bool ok = readSamsungResponse(client, false, error);
+  if (ok) {
+    Serial.println("Command accepted");
+  } else {
+    Serial.print("Command failed: ");
+    Serial.println(error);
+  }
   client.stop();
   delay(200);
   return ok;
@@ -510,6 +547,11 @@ void sendJson(int code, const String &json) {
 
 void handleRoot() {
   server.send_P(200, "text/html", INDEX_HTML);
+}
+
+void handleYoutubeRedirect() {
+  server.sendHeader("Location", "https://www.youtube.com/tv", true);
+  server.send(302, "text/plain", "Opening YouTube...");
 }
 
 void handleStatus() {
@@ -527,8 +569,22 @@ void handleKey() {
   String key = path.substring(String("/key/").length());
   key.toUpperCase();
 
+  Serial.print("HTTP key request: ");
+  Serial.println(key);
+
   if (!isAllowedKey(key)) {
     sendJson(400, "{\"ok\":false,\"error\":\"Unsupported key\"}");
+    return;
+  }
+
+  if (key == "KEY_YT_BROWSER") {
+    String error;
+    if (!sendSamsungKey("KEY_WWW", error)) {
+      sendJson(503, String("{\"ok\":false,\"key\":\"KEY_YT_BROWSER\",\"error\":\"") + error + "\"}");
+      return;
+    }
+
+    sendJson(200, "{\"ok\":true,\"key\":\"KEY_YT_BROWSER\",\"mode\":\"browser\",\"redirect\":\"/yt\"}");
     return;
   }
 
@@ -569,6 +625,7 @@ void setup() {
   connectWifi();
 
   server.on("/", HTTP_GET, handleRoot);
+  server.on("/yt", HTTP_GET, handleYoutubeRedirect);
   server.on("/status", HTTP_GET, handleStatus);
   server.onNotFound(handleNotFound);
   server.begin();
